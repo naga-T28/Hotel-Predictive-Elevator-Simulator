@@ -81,6 +81,10 @@ class HotelEventConfig(BaseModel):
     spread_seconds: float = 300.0
     group_size: int = 1
     luggage_factor: float = 1.0
+    # Offset applied only to the time HotelInformedPredictor uses as this
+    # event's center, to simulate prediction error against a fixed true
+    # demand schedule (EXPERIMENT_VALIDATION_PLAN.md 3.3).
+    prediction_time_offset_seconds: float = 0.0
 
 
 class PredictionErrorConfig(BaseModel):

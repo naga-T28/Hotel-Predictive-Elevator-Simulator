@@ -1,0 +1,4 @@
+car_id,total_distance_floors,empty_distance_floors,loaded_distance_floors,stop_count,door_open_count,average_load,average_occupancy_rate,busy_seconds,idle_seconds
+C1,1074.0,514.0,560.0,295,295,0.7274830519095543,0.04849887012730362,4079.399999999983,3444.89900000001
+C2,164.0,76.0,88.0,67,67,0.10632845651066772,0.007088563767377848,723.8000000000006,6723.877000000002
+C3,0.0,0.0,0.0,0,0,0.0,0.0,0.0,0.0

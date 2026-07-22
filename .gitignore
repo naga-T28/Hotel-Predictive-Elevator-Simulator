@@ -24,6 +24,14 @@ htmlcov/
 # Jupyter
 .ipynb_checkpoints/
 
+# LaTeX build artifacts
+*.aux
+*.dvi
+*.log
+*.out
+*.toc
+*.synctex.gz
+
 # Editors / OS
 .DS_Store
 .vscode/
@@ -31,3 +39,5 @@ htmlcov/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+docs/

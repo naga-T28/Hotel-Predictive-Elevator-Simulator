@@ -1,0 +1,62 @@
+# EXPERIMENT_VALIDATION_PLAN.md 2条: Parking only / Hotel predictive / Prescient
+# `compare --schedulers myopic,predictive,prescient --baseline myopic` で実行する。
+# ここでの "myopic" は parking.enabled=true と組み合わさるため Parking-only 条件になる
+# (schedulers/parking.py の駐機ロジックは scheduler.type と独立して動作するため)。
+# hotel_checkout_baseline.yaml と同じ乱数シード・需要系列。
+experiment:
+  name: hotel_checkout_trio
+  random_seed: 1
+  repetitions: 50
+
+building:
+  floors: 8
+  lobby_floor: 1
+
+elevators:
+  count: 3
+  capacity_people: 15
+  seconds_per_floor: 2.5
+  start_delay_seconds: 1.0
+  door_open_seconds: 1.5
+  door_close_seconds: 1.5
+  boarding_seconds_per_person: 0.7
+  alighting_seconds_per_person: 0.6
+
+traffic:
+  pattern: hotel
+  baseline_rate_per_hour: 60.0
+  baseline_pattern: down_peak
+
+hotel_events:
+  - event_id: checkout_001
+    event_type: checkout
+    start_time: 3600
+    end_time: 3600
+    source_floors: [2, 3, 4, 5, 6, 7, 8]
+    destination_distribution:
+      1: 1.0
+    expected_people: 150
+    spread_seconds: 1800
+    group_size: 2
+    luggage_factor: 1.5
+
+scheduler:
+  type: predictive
+  immediate_assignment: true
+
+parking:
+  enabled: true
+  strategy: all_to_lobby
+  reposition_interval_seconds: 30
+
+prediction:
+  type: hotel_informed
+  horizon_seconds: 60
+  optimization_horizon_seconds: 120
+  probability_threshold: 0.0
+  number_of_continuations: 1
+
+simulation:
+  warmup_seconds: 300
+  duration_seconds: 7200
+  cooldown_seconds: 600

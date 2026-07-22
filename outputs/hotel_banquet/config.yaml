@@ -72,3 +72,4 @@ hotel_events:
   spread_seconds: 300.0
   group_size: 1
   luggage_factor: 1.0
+  prediction_time_offset_seconds: 0.0

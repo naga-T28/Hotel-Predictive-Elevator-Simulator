@@ -3,6 +3,7 @@ scheduler comparisons (requirements.md 12, 18)."""
 from __future__ import annotations
 
 import json
+import math
 import random
 from dataclasses import dataclass
 from pathlib import Path
@@ -258,8 +259,51 @@ def aggregate_summaries(outcomes: list[RunOutcome]) -> dict:
     for column in df.columns:
         agg[f"{column}_mean"] = float(df[column].mean())
         agg[f"{column}_std"] = float(df[column].std(ddof=0)) if len(df) > 1 else 0.0
+        sem = float(df[column].std(ddof=1) / math.sqrt(len(df))) if len(df) > 1 else 0.0
+        agg[f"{column}_ci95_low"] = float(df[column].mean() - 1.96 * sem)
+        agg[f"{column}_ci95_high"] = float(df[column].mean() + 1.96 * sem)
     agg["n_runs"] = len(outcomes)
     return agg
+
+
+def paired_comparison(
+    results: dict[str, list[RunOutcome]], baseline_scheduler: str
+) -> dict[str, dict]:
+    """Compare schedulers using seed-matched waiting-time summaries.
+
+    Positive ``improvement_pct`` means that the candidate reduced mean waiting
+    time relative to the baseline. Pairing by seed prevents traffic-sample
+    variation from being mistaken for a scheduler effect.
+    """
+    if baseline_scheduler not in results:
+        raise ValueError(f"Unknown baseline scheduler: {baseline_scheduler}")
+
+    baseline = {o.seed: o.summary.average_waiting_time for o in results[baseline_scheduler]}
+    comparisons: dict[str, dict] = {}
+    for scheduler, outcomes in results.items():
+        if scheduler == baseline_scheduler:
+            continue
+        candidate = {o.seed: o.summary.average_waiting_time for o in outcomes}
+        seeds = sorted(set(baseline) & set(candidate))
+        if not seeds:
+            continue
+        # Difference is candidate minus baseline: negative values are better.
+        differences = np.array([candidate[s] - baseline[s] for s in seeds], dtype=float)
+        baseline_values = np.array([baseline[s] for s in seeds], dtype=float)
+        mean_difference = float(differences.mean())
+        sem = float(differences.std(ddof=1) / math.sqrt(len(seeds))) if len(seeds) > 1 else 0.0
+        baseline_mean = float(baseline_values.mean())
+        comparisons[scheduler] = {
+            "baseline_scheduler": baseline_scheduler,
+            "n_pairs": len(seeds),
+            "mean_waiting_time_difference_seconds": mean_difference,
+            "difference_ci95_low": mean_difference - 1.96 * sem,
+            "difference_ci95_high": mean_difference + 1.96 * sem,
+            "improvement_pct": (
+                -100.0 * mean_difference / baseline_mean if baseline_mean else 0.0
+            ),
+        }
+    return comparisons
 
 
 def aggregate_full(outcomes: list[RunOutcome]) -> dict:
@@ -280,6 +324,9 @@ def aggregate_full(outcomes: list[RunOutcome]) -> dict:
     for column in car_df.columns:
         agg[f"{column}_mean"] = float(car_df[column].mean())
         agg[f"{column}_std"] = float(car_df[column].std(ddof=0)) if len(car_df) > 1 else 0.0
+        sem = float(car_df[column].std(ddof=1) / math.sqrt(len(car_df))) if len(car_df) > 1 else 0.0
+        agg[f"{column}_ci95_low"] = float(car_df[column].mean() - 1.96 * sem)
+        agg[f"{column}_ci95_high"] = float(car_df[column].mean() + 1.96 * sem)
 
     return agg
 

@@ -1,0 +1,4 @@
+,baseline_scheduler,n_pairs,mean_waiting_time_difference_seconds,difference_ci95_low,difference_ci95_high,improvement_pct
+myopic,baseline,50,0.0,0.0,0.0,-0.0
+predictive,baseline,50,-1.1689115684396034,-1.309224864042879,-1.0285982728363279,7.803726845696493
+prescient,baseline,50,-0.5638875225480117,-0.6679040531073033,-0.45987099198872006,3.764548419633997

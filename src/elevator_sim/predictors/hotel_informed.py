@@ -46,6 +46,7 @@ class HotelInformedPredictor:
             if floor not in event.source_floors:
                 continue
             center = (event.start_time + event.end_time) / 2.0 if event.end_time > event.start_time else event.start_time
+            center += event.prediction_time_offset_seconds
             if abs(at_time - center) > 3 * max(event.spread_seconds, 1.0):
                 continue
             rate = _gaussian_density(at_time, center, event.spread_seconds) * event.expected_people
@@ -59,6 +60,7 @@ class HotelInformedPredictor:
         if event is None:
             return self.baseline_rate_per_hour / 3600.0, None
         center = (event.start_time + event.end_time) / 2.0 if event.end_time > event.start_time else event.start_time
+        center += event.prediction_time_offset_seconds
         return _gaussian_density(at_time, center, event.spread_seconds) * event.expected_people, event
 
     def predict_future_passengers(

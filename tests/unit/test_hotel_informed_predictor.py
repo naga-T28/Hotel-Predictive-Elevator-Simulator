@@ -68,6 +68,27 @@ def test_predictions_use_event_destination_distribution():
     assert all(pp.origin_floor == 5 for pp in predictions)
 
 
+def test_prediction_time_offset_shifts_predicted_center():
+    # EXPERIMENT_VALIDATION_PLAN.md 3.3: the true event time (used for demand
+    # generation) and the time given to the predictor can diverge to model
+    # prediction error, without touching actual passenger generation.
+    true_center = 1800.0
+    offset = 300.0
+    event_no_offset = make_event(start_time=true_center, end_time=true_center)
+    event_with_offset = make_event(
+        start_time=true_center, end_time=true_center, prediction_time_offset_seconds=offset
+    )
+    predictor_no_offset = HotelInformedPredictor(rng=np.random.default_rng(0), events=[event_no_offset])
+    predictor_with_offset = HotelInformedPredictor(rng=np.random.default_rng(0), events=[event_with_offset])
+
+    rate_true_center_no_offset, _ = predictor_no_offset._rate_per_second(5, true_center)
+    rate_true_center_with_offset, _ = predictor_with_offset._rate_per_second(5, true_center)
+    rate_shifted_center_with_offset, _ = predictor_with_offset._rate_per_second(5, true_center + offset)
+
+    assert rate_true_center_with_offset < rate_true_center_no_offset
+    assert rate_shifted_center_with_offset > rate_true_center_with_offset
+
+
 def test_falls_back_to_baseline_when_no_event_active():
     rng = np.random.default_rng(3)
     predictor = HotelInformedPredictor(

@@ -1,0 +1,78 @@
+experiment:
+  name: hotel_checkout_trio
+  random_seed: 1
+  repetitions: 50
+building:
+  floors: 8
+  lobby_floor: 1
+elevators:
+  count: 3
+  capacity_people: 15.0
+  seconds_per_floor: 2.5
+  start_delay_seconds: 1.0
+  door_open_seconds: 1.5
+  door_close_seconds: 1.5
+  boarding_seconds_per_person: 0.7
+  alighting_seconds_per_person: 0.6
+traffic:
+  pattern: hotel
+  total_arrival_rate_per_hour: 453.6
+  baseline_rate_per_hour: 60.0
+  baseline_pattern: down_peak
+trajectory:
+  grid_nx: 50
+  grid_ny: 50
+  floor_width_m: 20.0
+  floor_height_m: 20.0
+  walking_speed_mps: 1.2
+  walk_start_rate_per_hour: 324.0
+  elevator_bound_probability: 0.2
+  training_epochs: 20
+  training_batch_size: 20
+  training_duration_seconds: 600.0
+  training_seed: null
+scheduler:
+  type: myopic
+  immediate_assignment: true
+parking:
+  enabled: true
+  strategy: all_to_lobby
+  fixed_floors: {}
+  zone_floors: []
+  demand_weights: {}
+  reposition_interval_seconds: 30.0
+prediction:
+  type: hotel_informed
+  horizon_seconds: 60.0
+  optimization_horizon_seconds: 120.0
+  probability_threshold: 0.0
+  number_of_continuations: 1
+  prediction_error:
+    recall: 0.8
+    precision: 0.9
+    arrival_time_std_seconds: 2.0
+    destination_accuracy: 0.95
+simulation:
+  warmup_seconds: 300.0
+  duration_seconds: 7200.0
+  cooldown_seconds: 600.0
+hotel_events:
+- event_id: checkout_001
+  event_type: checkout
+  start_time: 3600.0
+  end_time: 3600.0
+  source_floors:
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  - 8
+  destination_distribution:
+    1: 1.0
+  expected_people: 150
+  spread_seconds: 1800.0
+  group_size: 2
+  luggage_factor: 1.5
+  prediction_time_offset_seconds: 0.0

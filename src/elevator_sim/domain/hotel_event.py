@@ -19,3 +19,4 @@ class HotelEvent:
     spread_seconds: float = 300.0
     group_size: int = 1
     luggage_factor: float = 1.0
+    prediction_time_offset_seconds: float = 0.0

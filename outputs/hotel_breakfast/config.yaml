@@ -77,6 +77,7 @@ hotel_events:
   spread_seconds: 2700.0
   group_size: 2
   luggage_factor: 1.0
+  prediction_time_offset_seconds: 0.0
 - event_id: breakfast_end
   event_type: breakfast_end
   start_time: 7200.0
@@ -95,3 +96,4 @@ hotel_events:
   spread_seconds: 2700.0
   group_size: 2
   luggage_factor: 1.0
+  prediction_time_offset_seconds: 0.0

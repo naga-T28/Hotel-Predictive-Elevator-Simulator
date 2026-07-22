@@ -9,13 +9,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from elevator_sim.config import load_config
+from elevator_sim.config import Config, load_config
 from elevator_sim.experiments.runner import (
     RunOutcome,
     aggregate_full,
     aggregate_summaries,
     pooled_waiting_times,
-    run_comparison,
+    paired_comparison,
     run_repetitions,
     run_single,
     write_run_outputs,
@@ -62,18 +62,74 @@ def cmd_run(args: argparse.Namespace) -> None:
 def cmd_compare(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     scheduler_types = [s.strip() for s in args.schedulers.split(",") if s.strip()]
-    results = run_comparison(config, scheduler_types, n_runs=args.runs)
+    n_runs = args.runs if args.runs is not None else config.experiment.repetitions
+
+    # configs_by_label supplies the config written alongside each condition's
+    # output (config.yaml, figures, etc.) and, for --schedulers entries, the
+    # scheduler.type override applied on top of --config.
+    configs_by_label: dict[str, Config] = {}
+    for scheduler_type in scheduler_types:
+        scheduler_config = config.model_copy(deep=True)
+        scheduler_config.scheduler.type = scheduler_type
+        configs_by_label[scheduler_type] = scheduler_config
+
+    baseline_config = None
+    if args.baseline_config:
+        baseline_config = load_config(args.baseline_config)
+        if baseline_config.experiment.random_seed != config.experiment.random_seed:
+            raise ValueError(
+                "--baseline-config random_seed "
+                f"({baseline_config.experiment.random_seed}) must match --config random_seed "
+                f"({config.experiment.random_seed}) so runs are seed-paired."
+            )
+        if args.baseline_label in configs_by_label:
+            raise ValueError(
+                f"--baseline-label {args.baseline_label!r} collides with a --schedulers entry"
+            )
+        configs_by_label[args.baseline_label] = baseline_config
+
+    if args.parallel and args.parallel > 1:
+        base_seed = config.experiment.random_seed
+        seeds = [base_seed + i for i in range(n_runs)]
+        tasks = [
+            (label, label_config, seed)
+            for label, label_config in configs_by_label.items()
+            for seed in seeds
+        ]
+        with ProcessPoolExecutor(max_workers=args.parallel) as pool:
+            outcomes = list(
+                pool.map(
+                    _run_one,
+                    [args.baseline_config if label == args.baseline_label and baseline_config is not None
+                     else args.config for label, _, _ in tasks],
+                    [seed for _, _, seed in tasks],
+                    [label_config.scheduler.type for _, label_config, _ in tasks],
+                )
+            )
+        results: dict[str, list[RunOutcome]] = {}
+        for (label, _, _), outcome in zip(tasks, outcomes):
+            results.setdefault(label, []).append(outcome)
+    else:
+        results = {
+            label: run_repetitions(label_config, label_config.scheduler.type, n_runs)
+            for label, label_config in configs_by_label.items()
+        }
 
     output_dir = Path(args.output or f"outputs/{config.experiment.name}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     aggregate_rows = {}
     waits_by_scheduler = {}
-    for scheduler_type, outcomes in results.items():
-        scheduler_dir = output_dir / scheduler_type
-        write_run_outputs(scheduler_dir, config, outcomes[0])
-        aggregate_rows[scheduler_type] = aggregate_full(outcomes)
-        waits_by_scheduler[scheduler_type] = pooled_waiting_times(
+    for label, outcomes in results.items():
+        label_dir = output_dir / label
+        label_config = configs_by_label[label]
+        # Keep a convenient representative run at the condition root and
+        # preserve every repetition needed to audit the aggregate statistics.
+        write_run_outputs(label_dir, label_config, outcomes[0])
+        for outcome in outcomes:
+            write_run_outputs(label_dir / "runs" / f"seed_{outcome.seed}", label_config, outcome)
+        aggregate_rows[label] = aggregate_full(outcomes)
+        waits_by_scheduler[label] = pooled_waiting_times(
             outcomes, config.simulation.warmup_seconds, config.simulation.duration_seconds
         )
 
@@ -81,6 +137,31 @@ def cmd_compare(args: argparse.Namespace) -> None:
     aggregate_df.to_csv(output_dir / "comparison_summary.csv")
     with open(output_dir / "comparison_summary.json", "w", encoding="utf-8") as f:
         json.dump(aggregate_rows, f, indent=2, ensure_ascii=False)
+
+    if args.baseline:
+        baseline = args.baseline
+    elif baseline_config is not None:
+        baseline = args.baseline_label
+    else:
+        baseline = scheduler_types[0]
+    paired_rows = paired_comparison(results, baseline)
+    pd.DataFrame(paired_rows).T.to_csv(output_dir / "paired_comparisons.csv")
+    with open(output_dir / "paired_comparisons.json", "w", encoding="utf-8") as f:
+        json.dump(paired_rows, f, indent=2, ensure_ascii=False)
+
+    # When a separate baseline condition is supplied and the primary
+    # comparison above was made against something else (e.g. a parking-only
+    # control, to isolate the prediction effect), also report differences
+    # against the true baseline so both effects are visible in one run.
+    if baseline_config is not None and baseline != args.baseline_label:
+        baseline_rows = paired_comparison(results, args.baseline_label)
+        pd.DataFrame(baseline_rows).T.to_csv(
+            output_dir / f"paired_comparisons_vs_{args.baseline_label}.csv"
+        )
+        with open(
+            output_dir / f"paired_comparisons_vs_{args.baseline_label}.json", "w", encoding="utf-8"
+        ) as f:
+            json.dump(baseline_rows, f, indent=2, ensure_ascii=False)
 
     figures_dir = output_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
@@ -165,7 +246,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_compare = sub.add_parser("compare", help="Compare multiple scheduler types")
     p_compare.add_argument("--config", required=True)
     p_compare.add_argument("--schedulers", required=True, help="Comma-separated scheduler types")
-    p_compare.add_argument("--runs", type=int, default=1)
+    p_compare.add_argument(
+        "--runs", type=int, default=None,
+        help="Runs per scheduler (default: experiment.repetitions from YAML)",
+    )
+    p_compare.add_argument(
+        "--baseline",
+        help="Baseline label for paired differences (default: --baseline-label if "
+        "--baseline-config is set, else the first scheduler)",
+    )
+    p_compare.add_argument(
+        "--baseline-config",
+        help="Separate YAML for a baseline condition (e.g. parking disabled) run "
+        "alongside --schedulers; must share experiment.random_seed with --config so "
+        "runs are seed-paired.",
+    )
+    p_compare.add_argument(
+        "--baseline-label",
+        default="baseline",
+        help="Label for --baseline-config's results (default: baseline)",
+    )
+    p_compare.add_argument(
+        "--parallel", type=int, default=1, help="Parallel worker processes (default: 1)"
+    )
     p_compare.add_argument("--output")
     p_compare.set_defaults(func=cmd_compare)
 

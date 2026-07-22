@@ -1,0 +1,57 @@
+# EXPERIMENT_VALIDATION_PLAN.md 3.3: 宴会終了イベントの予測時刻オフセット (+180秒)。
+# 実需要 (hotel_events[].start_time) は固定し、予測器に渡す時刻だけを
+# prediction_time_offset_seconds でずらす。hotel_banquet_baseline.yaml と同一乱数シード。
+building:
+  floors: 8
+  lobby_floor: 1
+elevators:
+  alighting_seconds_per_person: 0.6
+  boarding_seconds_per_person: 0.7
+  capacity_people: 15
+  count: 3
+  door_close_seconds: 1.5
+  door_open_seconds: 1.5
+  seconds_per_floor: 2.5
+  start_delay_seconds: 1.0
+experiment:
+  name: hotel_banquet_trio_offset_plus180
+  random_seed: 3
+  repetitions: 50
+hotel_events:
+- destination_distribution:
+    1: 0.6
+    6: 0.1
+    7: 0.15
+    8: 0.15
+  end_time: 1800
+  event_id: banquet_001
+  event_type: banquet_end
+  expected_people: 120
+  group_size: 1
+  luggage_factor: 1.0
+  source_floors:
+  - 3
+  spread_seconds: 300
+  start_time: 1800
+  prediction_time_offset_seconds: 180
+parking:
+  enabled: true
+  reposition_interval_seconds: 30
+  strategy: all_to_lobby
+prediction:
+  horizon_seconds: 60
+  number_of_continuations: 1
+  optimization_horizon_seconds: 120
+  probability_threshold: 0.0
+  type: hotel_informed
+scheduler:
+  immediate_assignment: true
+  type: predictive
+simulation:
+  cooldown_seconds: 600
+  duration_seconds: 3600
+  warmup_seconds: 300
+traffic:
+  baseline_pattern: down_peak
+  baseline_rate_per_hour: 40.0
+  pattern: hotel
