@@ -1,0 +1,62 @@
+# 実験E相当: 宴会終了（1フロアから短時間に大量発生するバースト交通）
+# requirements.md 6.3 のホテルイベント入力例をそのまま採用。
+experiment:
+  name: hotel_banquet
+  random_seed: 3
+  repetitions: 10
+
+building:
+  floors: 8
+  lobby_floor: 1
+
+elevators:
+  count: 3
+  capacity_people: 15
+  seconds_per_floor: 2.5
+  start_delay_seconds: 1.0
+  door_open_seconds: 1.5
+  door_close_seconds: 1.5
+  boarding_seconds_per_person: 0.7
+  alighting_seconds_per_person: 0.6
+
+traffic:
+  pattern: hotel
+  baseline_rate_per_hour: 40.0
+  baseline_pattern: down_peak
+
+hotel_events:
+  - event_id: banquet_001
+    event_type: banquet_end
+    start_time: 1800
+    end_time: 1800
+    source_floors: [3]
+    destination_distribution:
+      1: 0.60
+      6: 0.10
+      7: 0.15
+      8: 0.15
+    expected_people: 120
+    spread_seconds: 300   # 短時間バースト
+    group_size: 1
+    luggage_factor: 1.0
+
+scheduler:
+  type: predictive
+  immediate_assignment: true
+
+parking:
+  enabled: true
+  strategy: all_to_lobby
+  reposition_interval_seconds: 30
+
+prediction:
+  type: hotel_informed
+  horizon_seconds: 60
+  optimization_horizon_seconds: 120
+  probability_threshold: 0.0
+  number_of_continuations: 1
+
+simulation:
+  warmup_seconds: 300
+  duration_seconds: 3600
+  cooldown_seconds: 600

@@ -1,0 +1,97 @@
+experiment:
+  name: hotel_breakfast
+  random_seed: 2
+  repetitions: 10
+building:
+  floors: 8
+  lobby_floor: 1
+elevators:
+  count: 3
+  capacity_people: 15.0
+  seconds_per_floor: 2.5
+  start_delay_seconds: 1.0
+  door_open_seconds: 1.5
+  door_close_seconds: 1.5
+  boarding_seconds_per_person: 0.7
+  alighting_seconds_per_person: 0.6
+traffic:
+  pattern: hotel
+  total_arrival_rate_per_hour: 453.6
+  baseline_rate_per_hour: 60.0
+  baseline_pattern: down_peak
+trajectory:
+  grid_nx: 50
+  grid_ny: 50
+  floor_width_m: 20.0
+  floor_height_m: 20.0
+  walking_speed_mps: 1.2
+  walk_start_rate_per_hour: 324.0
+  elevator_bound_probability: 0.2
+  training_epochs: 20
+  training_batch_size: 20
+  training_duration_seconds: 600.0
+  training_seed: null
+scheduler:
+  type: predictive
+  immediate_assignment: true
+parking:
+  enabled: true
+  strategy: zoned
+  fixed_floors: {}
+  zone_floors:
+  - 1
+  - 4
+  - 8
+  demand_weights: {}
+  reposition_interval_seconds: 30.0
+prediction:
+  type: hotel_informed
+  horizon_seconds: 60.0
+  optimization_horizon_seconds: 120.0
+  probability_threshold: 0.0
+  number_of_continuations: 1
+  prediction_error:
+    recall: 0.8
+    precision: 0.9
+    arrival_time_std_seconds: 2.0
+    destination_accuracy: 0.95
+simulation:
+  warmup_seconds: 300.0
+  duration_seconds: 9000.0
+  cooldown_seconds: 600.0
+hotel_events:
+- event_id: breakfast_start
+  event_type: breakfast_start
+  start_time: 1800.0
+  end_time: 1800.0
+  source_floors:
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  - 8
+  destination_distribution:
+    2: 1.0
+  expected_people: 200
+  spread_seconds: 2700.0
+  group_size: 2
+  luggage_factor: 1.0
+- event_id: breakfast_end
+  event_type: breakfast_end
+  start_time: 7200.0
+  end_time: 7200.0
+  source_floors:
+  - 2
+  destination_distribution:
+    1: 0.15
+    3: 0.14
+    4: 0.14
+    5: 0.14
+    6: 0.14
+    7: 0.15
+    8: 0.14
+  expected_people: 190
+  spread_seconds: 2700.0
+  group_size: 2
+  luggage_factor: 1.0

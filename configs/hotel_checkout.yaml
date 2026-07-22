@@ -1,0 +1,59 @@
+# 実験C相当: チェックアウト需要（客室階からロビーへの下り集中）
+# ホテル情報利用型予測制御（HotelInformedPredictor）+ ロビー待機（ParkingScheduler）
+experiment:
+  name: hotel_checkout
+  random_seed: 1
+  repetitions: 10
+
+building:
+  floors: 8
+  lobby_floor: 1
+
+elevators:
+  count: 3
+  capacity_people: 15
+  seconds_per_floor: 2.5
+  start_delay_seconds: 1.0
+  door_open_seconds: 1.5
+  door_close_seconds: 1.5
+  boarding_seconds_per_person: 0.7
+  alighting_seconds_per_person: 0.6
+
+traffic:
+  pattern: hotel
+  baseline_rate_per_hour: 60.0  # residual inter-floor/lobby traffic outside the checkout rush
+  baseline_pattern: down_peak
+
+hotel_events:
+  - event_id: checkout_001
+    event_type: checkout
+    start_time: 3600      # checkout rush centered 1h into the evaluation window
+    end_time: 3600
+    source_floors: [2, 3, 4, 5, 6, 7, 8]
+    destination_distribution:
+      1: 1.0
+    expected_people: 150
+    spread_seconds: 1800   # spread over ~30 min either side (checkout window)
+    group_size: 2          # couples/families checking out together
+    luggage_factor: 1.5    # suitcases consume more capacity than a bare passenger
+
+scheduler:
+  type: predictive
+  immediate_assignment: true
+
+parking:
+  enabled: true
+  strategy: all_to_lobby
+  reposition_interval_seconds: 30
+
+prediction:
+  type: hotel_informed
+  horizon_seconds: 60
+  optimization_horizon_seconds: 120
+  probability_threshold: 0.0   # HotelInformedPredictor always reports probability=1.0
+  number_of_continuations: 1
+
+simulation:
+  warmup_seconds: 300
+  duration_seconds: 7200
+  cooldown_seconds: 600

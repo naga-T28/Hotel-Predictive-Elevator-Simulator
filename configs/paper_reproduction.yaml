@@ -1,0 +1,43 @@
+experiment:
+  name: paper_reproduction
+  random_seed: 42
+  repetitions: 50
+
+building:
+  floors: 8
+  lobby_floor: 1
+
+elevators:
+  count: 3
+  capacity_people: 15
+  seconds_per_floor: 2.5
+  start_delay_seconds: 1.0
+  door_open_seconds: 1.5
+  door_close_seconds: 1.5
+  boarding_seconds_per_person: 0.7
+  alighting_seconds_per_person: 0.6
+
+traffic:
+  pattern: down_peak
+  total_arrival_rate_per_hour: 453.6
+
+scheduler:
+  type: predictive
+  immediate_assignment: true
+
+prediction:
+  type: noisy_oracle
+  horizon_seconds: 10
+  optimization_horizon_seconds: 120
+  probability_threshold: 0.2
+  number_of_continuations: 1
+  prediction_error:
+    recall: 0.80
+    precision: 0.90
+    arrival_time_std_seconds: 2.0
+    destination_accuracy: 0.95
+
+simulation:
+  warmup_seconds: 300
+  duration_seconds: 3600
+  cooldown_seconds: 300
