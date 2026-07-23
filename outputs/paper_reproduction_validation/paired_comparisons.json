@@ -1,0 +1,26 @@
+{
+  "nearest_car": {
+    "baseline_scheduler": "myopic",
+    "n_pairs": 50,
+    "mean_waiting_time_difference_seconds": 0.8524355241371796,
+    "difference_ci95_low": 0.6789424432588888,
+    "difference_ci95_high": 1.0259286050154706,
+    "improvement_pct": -4.808977562437852
+  },
+  "predictive": {
+    "baseline_scheduler": "myopic",
+    "n_pairs": 50,
+    "mean_waiting_time_difference_seconds": 0.47919645774403563,
+    "difference_ci95_low": 0.30700019712169424,
+    "difference_ci95_high": 0.651392718366377,
+    "improvement_pct": -2.703365765549582
+  },
+  "prescient": {
+    "baseline_scheduler": "myopic",
+    "n_pairs": 50,
+    "mean_waiting_time_difference_seconds": 0.6632265537377697,
+    "difference_ci95_low": 0.4493115809722446,
+    "difference_ci95_high": 0.8771415265032949,
+    "improvement_pct": -3.7415634677663325
+  }
+}

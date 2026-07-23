@@ -1,0 +1,17 @@
+{
+  "scheduler_type": "prescient",
+  "seed": 86,
+  "average_waiting_time": 18.79388636363613,
+  "median_waiting_time": 17.333999999999605,
+  "p95_waiting_time": 37.76954999999998,
+  "max_waiting_time": 69.56299999999874,
+  "average_ride_time": 22.904090909090797,
+  "average_total_service_time": 41.697977272726924,
+  "pct_waited_over_30s": 0.1318181818181818,
+  "pct_waited_over_60s": 0.006818181818181818,
+  "left_behind_count": 0,
+  "left_behind_rate": 0.0,
+  "transported_count": 440,
+  "throughput_per_hour": 440.0,
+  "evaluated_passenger_count": 440
+}

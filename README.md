@@ -1,116 +1,406 @@
 # Hotel Predictive Elevator Simulator
 
-`requirements.md` の要件定義に基づく、ホテル向け予測型エレベーター群管理シミュレーター。
-離散事象シミュレーション（SimPy）上で、非予測型・単純近接・完全未来情報・予測型（ノイズ付き
-Oracle／軌跡＋Transformer／ホテル情報利用型）・待機位置最適化の各制御方式を、同一の乗客
-到着列で比較できる。
+ホテル内で発生する時間帯別・階別の移動需要を再現し、複数のエレベーター群管理方式を比較するための離散事象シミュレーターです。
 
-対象論文 Zhang et al., *Transformer Networks for Predictive Group Elevator Control*
-(MERL TR2022-100, ECC 2022) の追試（8階建て・3号機・下りピーク、予測ホライズン10秒、
-PPGE閾値0.2）に加えて、論文にない要素（団体客・荷物・ホテル固有需要）を独自拡張として
-実装している。`requirements.md` 23章の未決定事項の決定根拠は `DESIGN_DECISIONS.md` を参照。
+SimPyを用いて、乗客の到着、ホール呼び出し、号機割当、乗降、階間移動、待機位置制御をシミュレーションします。
 
-本リポジトリは研究用プロトタイプである。現在の予測型制御は、予測乗客を含む前方計算に
-基づく逐次号機割当と、独立した定期的な待機位置更新を実装している。論文中の式(1)に示す
-多目的最適化、割当済み呼び出しの再割当、停止順序全体の再最適化を完全実装したものではない。
-論文用実験の設計と主張可能な範囲は `EXPERIMENT_VALIDATION_PLAN.md` を参照。
+同一の乗客到着列に対して複数の制御方式を実行できるため、号機割当方式や需要予測方式による違いを比較できます。
 
-対応範囲は Phase 1〜4（`requirements.md` 21章）。Phase 5（高度な最適化・強化学習等）は
-「必要に応じて検討する」とされる将来拡張のため未実装。
+## 主な機能
 
-## Phase別の実装内容
+* 8階建てなど任意の建物条件の設定
+* 複数台のエレベーターの運行
+* 乗客到着とホール呼び出しの生成
+* Poisson到着過程による基礎交通の生成
+* チェックアウト、朝食、宴会終了などのホテル需要生成
+* 団体客と荷物による容量消費
+* 複数の号機割当方式
+* 将来需要を利用した予測型割当
+* 空き号機の待機位置制御
+* 歩行軌跡を利用した需要予測
+* 複数乱数シードによる反復実験
+* 制御方式間の対応比較
+* CSV、JSON、グラフの出力
 
-- **Phase 1（基本シミュレーター）**: 建物・乗客・エレベーターモデル、Poisson到着、
-  移動/乗車/降車、定員制約、Nearest Car / Myopic Scheduler、CSV出力。
-- **Phase 2（予測型群管理）**: Oracle / Noisy Oracle Predictor、Prescient / Predictive
-  Scheduler、前方シミュレーション、単一〜複数未来シナリオ、PPGE閾値フィルタ。
-- **Phase 3（軌跡予測）**: 2次元フロアモデルと50×50グリッド離散化、SimTread代替の
-  独自2D歩行軌跡生成器（エレベーター行き／デコイ）、線形回帰による残り時間予測、
-  Transformer（エンコーダ分類器）による「エレベーターへ向かう確率」予測。
-- **Phase 4（ホテル固有需要）**: `HotelEvent`（チェックアウト・朝食・宴会終了等）に基づく
-  需要生成、ホテル情報利用型Predictor（イベント時刻周辺で発生率を高めるガウス型モデル）、
-  Parking Scheduler（ロビー集約／号機別固定階／低中高分散／需要加重）、一定周期での
-  待機位置再計算。これは待機位置に対する周期的更新であり、運行計画全体の
-  Rolling Horizon Optimizationではない。
+本リポジトリはシミュレーション用のプロトタイプです。実際のエレベーター制御装置への接続や、安全制御の実装を目的としたものではありません。
+
+---
+
+## 目次
+
+* [シミュレーションの概要](#シミュレーションの概要)
+* [実装内容](#実装内容)
+* [セットアップ](#セットアップ)
+* [基本的な使い方](#基本的な使い方)
+* [制御方式](#制御方式)
+* [需要生成方式](#需要生成方式)
+* [ホテル需要シナリオ](#ホテル需要シナリオ)
+* [設定ファイル](#設定ファイル)
+* [比較実験](#比較実験)
+* [感度分析](#感度分析)
+* [出力ファイル](#出力ファイル)
+* [テスト](#テスト)
+* [ディレクトリ構成](#ディレクトリ構成)
+* [既知の制約](#既知の制約)
+
+---
+
+## シミュレーションの概要
+
+ホテルでは、時間帯や館内イベントによってエレベーター需要が変化します。
+
+代表的な需要には、以下があります。
+
+* 客室階からロビーへ集中するチェックアウト需要
+* 客室階とレストラン階の間を移動する朝食需要
+* 宴会場からロビーや客室階へ移動する宴会終了需要
+* 通常時に断続的に発生する基礎交通
+* 団体客や荷物を持つ利用者による容量消費
+
+本シミュレーターでは、これらの需要を仮想的に生成し、エレベーターの待ち時間や運行量を記録します。
+
+主な評価指標は以下のとおりです。
+
+* 平均待ち時間
+* 95パーセンタイル待ち時間
+* 最大待ち時間
+* 一定時間を超えた待ちの発生率
+* 乗り残し率
+* 乗車時間
+* 空運転距離
+* 総走行距離
+* 停止回数
+* 輸送件数
+
+---
+
+## 実装内容
+
+### 基本シミュレーター
+
+* 建物モデル
+* 乗客モデル
+* 乗客グループモデル
+* エレベーターモデル
+* ホール呼び出し
+* 乗車・降車処理
+* 階間移動
+* ドア開閉時間
+* 定員制約
+* 荷物係数
+* イベントログ
+* 乗客・号機ごとの指標集計
+
+### 号機割当
+
+以下の号機割当方式を実装しています。
+
+* Nearest Car
+* Myopic
+* Prescient
+* Predictive
+
+新しいホール呼び出しが発生すると、各方式に応じて担当号機を決定します。
+
+Predictive Schedulerでは、予測された将来乗客を前方シミュレーションに加え、推定待ち時間に基づいて担当号機を選択します。
+
+### 需要予測
+
+以下の予測器を実装しています。
+
+* No Prediction
+* Oracle
+* Noisy Oracle
+* Poisson
+* Linear Remaining-Time Predictor
+* Transformer Predictor
+* Trajectory-Based Predictor
+* Hotel-Informed Predictor
+
+### 歩行軌跡シミュレーション
+
+* 2次元フロアモデル
+* グリッド離散化
+* 歩行速度の設定
+* エレベーターへ向かう軌跡
+* エレベーターへ向かわないデコイ軌跡
+* 線形回帰による到着時間予測
+* Transformerによる到着確率予測
+
+歩行モデルは簡易的な独自実装です。実際のホテル内の歩行や、市販の避難・歩行シミュレーターの挙動を完全に再現するものではありません。
+
+### ホテル固有需要
+
+`HotelEvent`を使用して、ホテル内のイベントに応じた需要を生成できます。
+
+対応するイベント例は以下です。
+
+* チェックアウト
+* 朝食
+* 宴会終了
+* 団体移動
+* 任意の館内イベント
+
+イベントごとに、次の項目を設定できます。
+
+* イベント時刻
+* 発生時間帯
+* 発生人数
+* 出発階
+* 目的階
+* 乗客グループの人数
+* 荷物係数
+* 到着時刻の分散
+
+### 待機位置制御
+
+空き号機の待機位置を定期的に更新できます。
+
+対応する方式は以下です。
+
+* 全号機をロビーへ移動
+* 号機ごとの固定階
+* 低層・中層・高層へのゾーン分散
+* 予測需要に基づく配置
+
+現在の待機位置制御は、空き号機の配置のみを変更します。割当済み呼び出しや停止順序全体の再計算は行いません。
+
+---
 
 ## セットアップ
 
-Python 3.11以上が必要。軌跡予測ではPyTorchを使用するため、利用環境に対応した
-PyTorchパッケージをインストールする。
+### 必要環境
+
+* Python 3.11以上
+* pip
+* venvまたは同等の仮想環境
+
+歩行軌跡のTransformer予測ではPyTorchを使用します。
+
+### インストール
 
 ```bash
+git clone https://github.com/naga-T28/Hotel-Predictive-Elevator-Simulator.git
+cd Hotel-Predictive-Elevator-Simulator
+
 python3 -m venv .venv
 source .venv/bin/activate
+
 pip install -e ".[dev]"
 ```
 
-## 使い方
+Windows PowerShellでは、次のコマンドで仮想環境を有効化します。
 
-```bash
-# 単一実験（論文再現条件）
-python -m elevator_sim run --config configs/paper_reproduction.yaml
-
-# 軌跡＋Transformer予測（Phase 3）
-python -m elevator_sim run --config configs/trajectory_prediction.yaml
-
-# ホテル固有需要（Phase 4: チェックアウト／朝食／宴会終了）
-python -m elevator_sim run --config configs/hotel_checkout.yaml
-python -m elevator_sim run --config configs/hotel_breakfast.yaml
-python -m elevator_sim run --config configs/hotel_banquet.yaml
-
-# 制御方式の比較
-python -m elevator_sim compare \
-  --config configs/paper_reproduction.yaml \
-  --schedulers myopic,nearest_car,predictive,prescient \
-  --baseline myopic \
-  --runs 50 \
-  --output outputs/paper_reproduction_validation
-
-# 複数乱数シードでの反復実験（並列実行対応）
-python -m elevator_sim experiment \
-  --config configs/paper_reproduction.yaml \
-  --runs 50 --parallel 4
-
-# 既存の出力ディレクトリからグラフを再生成
-python -m elevator_sim plot --input outputs/paper_reproduction
+```powershell
+.venv\Scripts\Activate.ps1
 ```
 
-単一実験の出力は `outputs/<experiment_name>/` 以下に `summary.json`、
-`passenger_metrics.csv`、`elevator_metrics.csv`、`event_log.csv`、
-`assignment_log.csv`、`figures/*.png` として書き出される。比較実験では、これらに加えて
-`comparison_summary.csv/json`、`paired_comparisons.csv/json`、および各条件の
-`runs/seed_*/` に全反復の未集計ログを保存する。
+---
 
-## 設定ファイルの主な切り替え
+## 基本的な使い方
 
-| キー | 値 | 内容 |
-| --- | --- | --- |
-| `traffic.pattern` | `down_peak` / `up_peak` / `trajectory` / `hotel` | 需要生成方式 |
-| `scheduler.type` | `nearest_car` / `myopic` / `prescient` / `predictive` / `parking` | 号機割当方式 |
-| `prediction.type` | `no_prediction` / `oracle` / `noisy_oracle` / `trajectory` / `hotel_informed` | 予測器 |
-| `parking.enabled` + `parking.strategy` | `all_to_lobby` / `fixed_per_car` / `zoned` / `demand_weighted` | 待機位置最適化の併用 |
-| `hotel_events` | `HotelEvent`のリスト | チェックアウト・朝食・宴会等のイベント需要 |
+### 単一シミュレーション
 
-`prediction.type: trajectory` を使う場合、`trajectory:` セクションでグリッド解像度・
-歩行速度・Transformer学習エポック数等を指定する。学習データは実行と同じ乱数シードから
-派生した別シードで生成するため、評価対象の軌跡そのもので学習することはない
-（論文の学習/テスト分割に対応）。
+```bash
+python -m elevator_sim run \
+  --config configs/paper_reproduction.yaml
+```
 
-## 検証実験（`EXPERIMENT_VALIDATION_PLAN.md`対応）
+### チェックアウト需要
 
-ホテル固有需要（Phase 4）が「待機位置最適化だけの効果」と「ホテル情報予測の効果」を
-分離して検証できるよう、`configs/validation/` に4条件比較用のconfigを用意している
-（詳細は `EXPERIMENT_VALIDATION_PLAN.md` 参照）。
+```bash
+python -m elevator_sim run \
+  --config configs/hotel_checkout.yaml
+```
 
-- **Baseline**: `scheduler.type: myopic` + `parking.enabled: false` + `prediction.type: no_prediction`
-  （`*_baseline.yaml`）。
-- **Parking only / Hotel predictive / Prescient reference**: 同一の`parking`設定を持つ1つのconfig
-  （`*_trio.yaml`）に対し、`compare --schedulers myopic,predictive,prescient`で3条件を同時実行する
-  （駐機ロジックは`scheduler.type`と独立に動作するため、`myopic`はParking-only相当になる）。
+### 朝食需要
 
-Baselineとtrioは別YAMLだが`parking.enabled`だけが異なるため、`compare`だけでは1回の実行に
-まとめられない。これに対応するため`compare`に`--baseline-config`/`--baseline-label`/`--parallel`
-を追加した（`--baseline-config`省略時は既存動作と完全に同一）。
+```bash
+python -m elevator_sim run \
+  --config configs/hotel_breakfast.yaml
+```
+
+### 宴会終了需要
+
+```bash
+python -m elevator_sim run \
+  --config configs/hotel_banquet.yaml
+```
+
+### 歩行軌跡を利用した予測
+
+```bash
+python -m elevator_sim run \
+  --config configs/trajectory_prediction.yaml
+```
+
+### 複数乱数シードによる反復実験
+
+```bash
+python -m elevator_sim experiment \
+  --config configs/hotel_checkout.yaml \
+  --runs 50 \
+  --parallel 4
+```
+
+`--runs`には実行回数、`--parallel`には並列実行数を指定します。
+
+### グラフの再生成
+
+```bash
+python -m elevator_sim plot \
+  --input outputs/hotel_checkout
+```
+
+---
+
+## 制御方式
+
+### Nearest Car
+
+呼び出し階との距離や進行方向に基づいて、比較的近い号機へ呼び出しを割り当てます。
+
+### Myopic
+
+現在の号機状態と登録済み呼び出しを用いて、現在発生している呼び出しの割当を決定します。
+
+将来の乗客需要は利用しません。
+
+### Predictive
+
+現在の呼び出しに加えて、予測された将来乗客を前方シミュレーションへ含めます。
+
+各号機へ呼び出しを仮割当し、推定される待ち時間を比較して担当号機を選択します。
+
+### Prescient
+
+シミュレーション上で生成済みの将来到着情報を使用する比較用方式です。
+
+ただし、現在の逐次割当と近似的な前方シミュレーションに従って動作するため、数学的に最適な上限を保証するものではありません。
+
+### Parking
+
+空き号機を指定された階へ移動します。
+
+Parkingは号機割当方式とは独立して有効化できます。
+
+---
+
+## 需要生成方式
+
+### Poisson到着
+
+通常時の乗客到着を、Poisson到着過程として生成します。
+
+到着率、出発階、目的階分布などを設定ファイルから変更できます。
+
+### 下りピーク
+
+複数の上層階から低層階またはロビーへ向かう需要を生成します。
+
+### 上りピーク
+
+ロビーや低層階から上層階へ向かう需要を生成します。
+
+### 歩行軌跡
+
+2次元空間上で仮想利用者を移動させ、エレベーターホールへの到着を生成します。
+
+### ホテルイベント
+
+ホテルイベントの時刻と人数に基づいて、特定の時間帯に需要を集中させます。
+
+基礎交通とホテルイベント需要は同時に生成できます。
+
+---
+
+## ホテル需要シナリオ
+
+### チェックアウト
+
+客室階からロビーへ向かう下り需要を生成します。
+
+主な設定項目は以下です。
+
+* チェックアウト予定時刻
+* 発生人数
+* 客室階の分布
+* グループ人数
+* 荷物係数
+* 到着時刻の標準偏差
+* 基礎交通の到着率
+
+### 朝食
+
+客室階とレストラン階の間に双方向需要を生成します。
+
+朝食会場へ向かう需要と、食事終了後に客室階へ戻る需要を設定できます。
+
+### 宴会終了
+
+宴会場からロビー、客室階、その他の館内施設へ向かう需要を生成します。
+
+イベント終了時刻に対する予測誤差も設定できます。
+
+---
+
+## 設定ファイル
+
+実験条件はYAMLファイルで指定します。
+
+### 主な設定項目
+
+| キー                    | 設定値の例                                                                 | 内容         |
+| --------------------- | --------------------------------------------------------------------- | ---------- |
+| `traffic.pattern`     | `down_peak`、`up_peak`、`trajectory`、`hotel`                            | 需要生成方式     |
+| `scheduler.type`      | `nearest_car`、`myopic`、`prescient`、`predictive`                       | 号機割当方式     |
+| `prediction.type`     | `no_prediction`、`oracle`、`noisy_oracle`、`trajectory`、`hotel_informed` | 需要予測方式     |
+| `parking.enabled`     | `true`、`false`                                                        | 待機位置制御の有効化 |
+| `parking.strategy`    | `all_to_lobby`、`fixed_per_car`、`zoned`、`demand_weighted`              | 待機位置の決定方式  |
+| `hotel_events`        | `HotelEvent`のリスト                                                      | ホテルイベントの設定 |
+| `simulation.duration` | 秒数                                                                    | シミュレーション時間 |
+| `building.floors`     | 整数                                                                    | 建物の階数      |
+| `elevators.count`     | 整数                                                                    | エレベーター台数   |
+| `elevators.capacity`  | 数値                                                                    | 1台当たりの容量   |
+| `random_seed`         | 整数                                                                    | 乱数シード      |
+
+### 歩行軌跡設定
+
+`prediction.type: trajectory`を使用する場合は、`trajectory`セクションで以下を設定します。
+
+* グリッド解像度
+* フロアサイズ
+* 歩行速度
+* 軌跡数
+* デコイ軌跡の割合
+* 学習エポック数
+* Transformerのパラメータ
+
+学習用の軌跡と評価用の軌跡には、異なる派生乱数シードを使用します。
+
+---
+
+## 比較実験
+
+`compare`コマンドを使用すると、同じ乗客到着列に対して複数の制御方式を実行できます。
+
+```bash
+python -m elevator_sim compare \
+  --config configs/validation/hotel_checkout_trio.yaml \
+  --schedulers myopic,predictive,prescient \
+  --baseline myopic \
+  --runs 50 \
+  --parallel 4 \
+  --output outputs/hotel_checkout_comparison
+```
+
+各乱数シードについて同一の乗客需要を生成し、制御方式だけを変更します。
+
+これにより、乗客需要のばらつきを抑えた対応比較が可能です。
+
+### 別設定のBaselineを使用する場合
+
+Parkingを使用しない条件など、別の設定ファイルをBaselineとして指定できます。
 
 ```bash
 python -m elevator_sim compare \
@@ -119,84 +409,316 @@ python -m elevator_sim compare \
   --baseline myopic \
   --baseline-config configs/validation/hotel_checkout_baseline.yaml \
   --baseline-label baseline \
-  --runs 50 --parallel 4 \
+  --runs 50 \
+  --parallel 4 \
   --output outputs/hotel_checkout_validation
 ```
 
-出力ディレクトリには4条件分の`baseline/`・`myopic/`・`predictive/`・`prescient/`
-（代表run + `runs/seed_*`）に加え、`comparison_summary.csv`（各条件の平均・標準偏差・95%CI）、
-`paired_comparisons.csv`（`--baseline`基準、既定はParking-only = H2用）、
-`paired_comparisons_vs_<baseline-label>.csv`（真のBaseline基準 = H1用、`--baseline-config`
-指定時のみ追加出力）が書き出される。候補方式－基準方式の待ち時間差について、95%信頼区間の
-上限が0秒未満なら「今回の条件では待ち時間を短縮した」と判断する
-（`EXPERIMENT_VALIDATION_PLAN.md` 6章）。
+### 比較条件の例
 
-宴会終了イベントの予測誤差実験（3.3章）用に、`HotelEventConfig`へ
-`prediction_time_offset_seconds`（既定0.0）を追加した。実需要生成（`hotel_events`の
-`start_time`）はそのまま使い、`HotelInformedPredictor`が参照する予定時刻だけをこの秒数
-ずらす。`configs/validation/hotel_banquet_trio_offset_{0,plus60,minus60,plus180,minus180,
-plus300,minus300}.yaml`が対応する（`OraclePredictor`/`PrescientScheduler`は`hotel_events`を
-参照しないため、この誤差はHotel predictive条件のみに影響する）。
+| 条件                  | 将来需要       | 待機位置制御 |
+| ------------------- | ---------- | ------ |
+| Baseline            | 使用しない      | 使用しない  |
+| Parking only        | 使用しない      | 使用する   |
+| Hotel predictive    | ホテル予定から推定  | 使用する   |
+| Prescient reference | 実際の将来到着を参照 | 使用する   |
 
-同様に、荷物係数スイープ（`configs/validation/hotel_checkout_trio_luggage_{1.0,2.0}.yaml`、
-既存`1.5`は`hotel_checkout_trio.yaml`）と予測時間スイープ
-（`hotel_checkout_trio_horizon_{10,20,40}.yaml`、既存`60`は`hotel_checkout_trio.yaml`）も
-用意している。
+---
 
-checkoutシナリオのみ4条件×50シードを実行済み（`outputs/hotel_checkout_validation/`）。
-Hotel predictiveはParking onlyに対して平均待ち時間を1.17秒（7.80%）短縮し、対応差の
-95%信頼区間は−1.31〜−1.03秒だった。ただし、これは設定したチェックアウト需要に限った
-シミュレーション結果であり、他シナリオや実ホテルへ一般化できる結果ではない。
-チェックアウト需要は宛先が100%ロビーのため、待機中の号機は駐機指示がなくても自然にロビーへ
-戻っており、このシナリオでは Parking only と Baseline がほぼ一致する。breakfast・banquetの
-オフセット/luggage/horizonスイープはconfigのみ整備済みで、実行は同様のコマンドで行える。
+## 感度分析
 
-Prescientは完全な将来到着を参照するが、現在の前方計算と逐次割当の近似に従うため、常に他方式を
-上回る数学的な上限ではない。実際、checkoutの実行済み結果ではHotel predictiveより平均待ち時間が
-長かった。この結果は、将来情報の価値そのものよりも、現在の割当評価と経路近似に改善余地がある
-ことを示している。
+### イベント予定時刻の誤差
+
+`prediction_time_offset_seconds`を使用すると、実際の需要発生時刻を変更せず、予測器が参照する予定時刻だけをずらせます。
+
+```yaml
+prediction_time_offset_seconds: 60.0
+```
+
+対応する設定例は以下です。
+
+```text
+configs/validation/hotel_banquet_trio_offset_0.yaml
+configs/validation/hotel_banquet_trio_offset_plus60.yaml
+configs/validation/hotel_banquet_trio_offset_minus60.yaml
+configs/validation/hotel_banquet_trio_offset_plus180.yaml
+configs/validation/hotel_banquet_trio_offset_minus180.yaml
+configs/validation/hotel_banquet_trio_offset_plus300.yaml
+configs/validation/hotel_banquet_trio_offset_minus300.yaml
+```
+
+### 荷物係数
+
+```text
+configs/validation/hotel_checkout_trio_luggage_1.0.yaml
+configs/validation/hotel_checkout_trio_luggage_2.0.yaml
+```
+
+標準設定では、荷物係数1.5を使用します。
+
+```text
+configs/validation/hotel_checkout_trio.yaml
+```
+
+### 予測ホライズン
+
+```text
+configs/validation/hotel_checkout_trio_horizon_10.yaml
+configs/validation/hotel_checkout_trio_horizon_20.yaml
+configs/validation/hotel_checkout_trio_horizon_40.yaml
+```
+
+標準設定では、60秒の予測ホライズンを使用します。
+
+---
+
+## 出力ファイル
+
+単一実行の結果は、原則として以下へ保存されます。
+
+```text
+outputs/<experiment_name>/
+```
+
+### 単一実行
+
+```text
+outputs/<experiment_name>/
+├── summary.json
+├── passenger_metrics.csv
+├── elevator_metrics.csv
+├── event_log.csv
+├── assignment_log.csv
+└── figures/
+    └── *.png
+```
+
+### 比較実験
+
+```text
+outputs/<comparison_name>/
+├── baseline/
+├── myopic/
+├── predictive/
+├── prescient/
+├── comparison_summary.csv
+├── comparison_summary.json
+├── paired_comparisons.csv
+├── paired_comparisons.json
+└── paired_comparisons_vs_baseline.csv
+```
+
+各方式の全反復ログは、以下へ保存されます。
+
+```text
+<condition>/runs/seed_*/
+```
+
+### 主な出力内容
+
+#### `summary.json`
+
+実験条件と主要な評価指標を保存します。
+
+#### `passenger_metrics.csv`
+
+乗客または乗客グループごとの指標を保存します。
+
+* 到着時刻
+* 出発階
+* 目的階
+* 待ち時間
+* 乗車時間
+* 乗り残し
+* 担当号機
+
+#### `elevator_metrics.csv`
+
+号機ごとの運行指標を保存します。
+
+* 総走行距離
+* 空運転距離
+* 停止回数
+* 輸送件数
+* 稼働時間
+
+#### `event_log.csv`
+
+シミュレーション中に発生したイベントを時系列で保存します。
+
+#### `assignment_log.csv`
+
+ホール呼び出しと担当号機の割当結果を保存します。
+
+#### `comparison_summary.csv`
+
+各制御方式について、複数乱数シードの平均値、標準偏差、信頼区間を保存します。
+
+#### `paired_comparisons.csv`
+
+同じ乱数シードにおける、基準方式と候補方式の指標差を保存します。
+
+---
 
 ## テスト
+
+すべてのテストは次のコマンドで実行できます。
 
 ```bash
 pytest
 ```
 
-単体テスト・統合テストでは、号機の停止順序、定員判定、待ち時間計算、Poisson到着、
-グリッド離散化、軌跡生成、Transformer/線形回帰の予測精度、ホテル需要生成、待機位置
-最適化、将来情報を無効化したPredictiveがMyopicと同等になることの確認、
-`prediction_time_offset_seconds`によるホテル情報予測器への予測誤差注入、
-`compare --baseline-config`の対応差出力等を検証する。テスト件数は開発に伴い変化するため、
-実行時のpytest出力を正とする。
+主に以下を検証しています。
+
+* 号機の移動
+* 停止順序
+* 乗車・降車処理
+* 定員判定
+* 待ち時間計算
+* Poisson到着過程
+* ホテル需要生成
+* グリッド離散化
+* 歩行軌跡生成
+* 線形回帰による到着時間予測
+* Transformerによる分類
+* 待機位置制御
+* 予測情報を無効化した場合の動作
+* イベント時刻誤差の注入
+* 複数設定間の対応比較
+* CSV・JSON出力
+
+テスト件数は開発に伴って変化するため、最新の`pytest`実行結果を確認してください。
+
+---
 
 ## ディレクトリ構成
 
 ```text
 src/elevator_sim/
-├── domain/            # Passenger, ElevatorCar, HallCall, Building, HotelEvent
-├── simulation/         # SimPyエンジン, SimulationState, 前方シミュレーション
-├── traffic/            # Poisson到着過程, グリッド離散化, 2D軌跡生成, ホテル需要生成
-├── schedulers/          # nearest_car, myopic, prescient, predictive, parking
-├── predictors/           # no_prediction, oracle, noisy_oracle, poisson,
-│                         # linear_rtd, transformer, trajectory_based, hotel_informed
-├── metrics/              # 乗客/号機指標の集計
-├── experiments/          # 単発実行・反復実行・比較実行
-├── visualization/        # matplotlibによるグラフ出力
-├── config.py              # YAML設定スキーマ
-└── cli.py                 # run/compare/experiment/plot コマンド
+├── domain/
+│   ├── passenger.py
+│   ├── elevator.py
+│   ├── hall_call.py
+│   ├── building.py
+│   └── hotel_event.py
+├── simulation/
+│   ├── engine.py
+│   ├── state.py
+│   └── forward_simulation.py
+├── traffic/
+│   ├── poisson.py
+│   ├── trajectory.py
+│   ├── grid.py
+│   └── hotel.py
+├── schedulers/
+│   ├── nearest_car.py
+│   ├── myopic.py
+│   ├── prescient.py
+│   ├── predictive.py
+│   └── parking.py
+├── predictors/
+│   ├── no_prediction.py
+│   ├── oracle.py
+│   ├── noisy_oracle.py
+│   ├── poisson.py
+│   ├── linear_rtd.py
+│   ├── transformer.py
+│   ├── trajectory_based.py
+│   └── hotel_informed.py
+├── metrics/
+├── experiments/
+├── visualization/
+├── config.py
+└── cli.py
 ```
+
+---
 
 ## 既知の制約
 
-- `prediction_time_offset_seconds`はイベント時刻誤差を予測側だけに与えられるが、予測人数や
-  目的階分布の誤差をホテル情報利用型Predictorへ独立に与える機能は未実装。
-- 周期的更新は待機位置の再計算のみを対象とし、既に割り当て済みの呼び出しの再割当や
-  停止順序全体の再最適化は実装していない。
-- Predictive Schedulerの目的関数は推定平均待ち時間であり、論文の式(1)に示した
-  95%待ち時間、混雑度、停止回数、空運転距離を含む多目的関数は未実装。
-- Prescient SchedulerはOracle到着情報を使う比較用実装だが、探索空間と経路評価が近似的なため、
-  厳密な性能上限を保証しない。
-- 要件に記載された `prediction_log.csv`、エネルギー消費量、最大割当計算時間は未出力。
-- breakfast、banquet、予測誤差、荷物係数、予測時間の検証configは用意されているが、
-  論文用の全条件・50シード実験は未完了。
-- 実ホテルデータ・実映像・Elevate/SimTreadとの接続は`requirements.md` 2.2の通り対象外。
+### 乗客モデル
+
+* 団体客は1つの乗客グループレコードとして管理します。
+* 定員判定では、グループ人数と荷物係数を考慮します。
+* 待ち時間、乗り残し率、輸送件数はグループ単位で集計します。
+* 現在の乗降時間は、グループ人数に比例して増加しません。
+* 厳密な利用者1人当たりの指標には対応していません。
+
+### エレベーターモデル
+
+* 実機の制御装置とは接続していません。
+* モーター、ブレーキ、着床、安全装置、非常時管制は再現していません。
+* 階間移動時間やドア時間は簡略化したモデルです。
+* 加速度や減速度を含む連続的な物理モデルではありません。
+
+### 号機割当
+
+* 割当済み呼び出しの再割当は実装していません。
+* 全号機の停止順序を同時に再最適化する機能はありません。
+* Predictive Schedulerは逐次的な号機割当を行います。
+* Prescient Schedulerは厳密な最適解を求める方式ではありません。
+
+### 待機位置制御
+
+* 待機位置の再計算は一定周期で実行されます。
+* 運行計画全体の再最適化は行いません。
+* 呼び出し処理中の号機は、原則として待機位置変更の対象外です。
+
+### 予測モデル
+
+* ホテル情報予測では、イベント予定時刻の誤差を設定できます。
+* 予測人数の誤差を独立に与える機能は未実装です。
+* 目的階分布の誤差を独立に与える機能は未実装です。
+* 歩行軌跡モデルは簡易モデルです。
+* 実際のホテルの映像や位置情報は使用していません。
+
+### 評価指標
+
+以下の項目は未実装です。
+
+* エネルギー消費量
+* 最大割当計算時間
+* 詳細な予測ログ
+* 利用者1人単位で重み付けした全指標
+* 乗降人数に応じた可変乗降時間
+
+---
+
+## 関連ドキュメント
+
+### [`requirements.md`](requirements.md)
+
+シミュレーターの機能要件、設定項目、実装範囲を記載しています。
+
+### [`EXPERIMENT_VALIDATION_PLAN.md`](EXPERIMENT_VALIDATION_PLAN.md)
+
+制御方式の比較条件、反復実験、評価指標、感度分析の方法を記載しています。
+
+### [`EXPERIMENT_RESULTS_GUIDE.md`](EXPERIMENT_RESULTS_GUIDE.md)
+
+出力ファイル、評価指標、比較結果の確認方法を記載しています。
+
+---
+
+## 再現実行
+
+同じ結果を再現する場合は、以下を固定してください。
+
+* 設定ファイル
+* 乱数シード
+* Pythonバージョン
+* 依存パッケージ
+* 実行コマンド
+* Gitコミット
+
+例：
+
+```text
+Version: v1.0.0
+Commit: abcdef1
+Python: 3.11
+Config: configs/validation/hotel_checkout_trio.yaml
+Runs: 50
+```
+
+公開済みの結果とコードを対応付ける場合は、Gitタグまたはリリースを作成することを推奨します。

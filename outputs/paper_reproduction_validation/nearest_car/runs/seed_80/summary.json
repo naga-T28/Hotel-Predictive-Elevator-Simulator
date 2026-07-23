@@ -1,0 +1,17 @@
+{
+  "scheduler_type": "nearest_car",
+  "seed": 80,
+  "average_waiting_time": 19.55395147679293,
+  "median_waiting_time": 17.961999999999534,
+  "p95_waiting_time": 38.05934999999845,
+  "max_waiting_time": 70.43699999999853,
+  "average_ride_time": 24.01308016877624,
+  "average_total_service_time": 43.56703164556918,
+  "pct_waited_over_30s": 0.19198312236286919,
+  "pct_waited_over_60s": 0.008438818565400843,
+  "left_behind_count": 0,
+  "left_behind_rate": 0.0,
+  "transported_count": 474,
+  "throughput_per_hour": 473.99999999999994,
+  "evaluated_passenger_count": 474
+}
